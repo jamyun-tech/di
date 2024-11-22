@@ -30,7 +30,7 @@ func (foo PlainFoo) Run() {
 	foo.bar.DoSth()
 }
 
-// a plain bean example
+// a autowired bean example
 type DiFoo struct {
     bar Autowired[Bar]
 }
