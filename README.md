@@ -32,11 +32,11 @@ func (foo PlainFoo) Run() {
 
 // a autowired bean example
 type DiFoo struct {
-    bar Autowired[Bar]
+	bar Autowired[Bar]
 }
 
 func (foo DiFoo) Run() {
-    foo.bar().DoSth()
+	foo.bar().DoSth()
 }
 ```
 
