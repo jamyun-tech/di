@@ -45,7 +45,7 @@ func (foo DiFoo) Run() {
 `di` wrap value with `sync.OnceValue` and assemble bean using `sync.Map` as a bean registry, the performance overhead is
 acceptable.
 
-We'll have the following [benchmark](https://github.com/jamyun-tech/blob/main/di_bench_test.go) running on my laptop, the
+We'll have the following [benchmark](https://github.com/jamyun-tech/di/blob/main/di_bench_test.go) running on my laptop, the
 result shows average overhead per ops is 1.5~1.7ns. In real world with real work load, the overhead can be ignored.
 
 ```shell
@@ -129,4 +129,4 @@ func main() {
 }
 ```
 
-More example: [Example](https://github.com/jamyun-tech/tree/main/example)
+More example: [Example](https://github.com/jamyun-tech/di/tree/main/example)
