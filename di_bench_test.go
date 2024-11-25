@@ -60,10 +60,10 @@ func BenchmarkPlainStruct(b *testing.B) {
 func BenchmarkDIStruct(b *testing.B) {
 	defer di.Reset()
 
-	di.Component(new(DIA), &DIAImpl{})
-	db := di.Component(new(DIB), &DIBImpl{
-		A: di.Resource(new(DIA)),
-	})
+	di.Component(&DIAImpl{}, new(DIA))
+	db := di.Component(&DIBImpl{
+		A: di.Autowire(new(DIA)),
+	}, new(DIB))
 	for i := 0; i < b.N; i++ {
 		db.Run()
 	}
@@ -121,10 +121,10 @@ func BenchmarkPlainFmt(b *testing.B) {
 func BenchmarkDiFmt(b *testing.B) {
 	defer di.Reset()
 
-	di.Component(new(DiFmtA), &DiFmtAImpl{})
-	db := di.Component(new(DiFmtB), &DiFmtBImpl{
-		A: di.Resource(new(DiFmtA)),
-	})
+	di.Component(&DiFmtAImpl{}, new(DiFmtA))
+	db := di.Component(&DiFmtBImpl{
+		A: di.Autowire(new(DiFmtA)),
+	}, new(DiFmtB))
 	for i := 0; i < b.N; i++ {
 		db.Run()
 	}

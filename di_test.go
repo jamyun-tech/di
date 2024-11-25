@@ -1,7 +1,6 @@
 package di_test
 
 import (
-	"errors"
 	"github.com/jamyun-tech/di"
 	"github.com/stretchr/testify/assert"
 	"testing"
@@ -20,7 +19,10 @@ type (
 
 	SimpleBImpl struct {
 		A di.Autowired[SimpleA]
+		C di.Autowired[SimpleC]
 	}
+
+	SimpleC interface{}
 )
 
 func (a SimpleAImpl) DoA() string {
@@ -35,16 +37,7 @@ func TestFailOnBeanDuplication(t *testing.T) {
 	defer di.Reset()
 
 	_ = di.Component(new(SimpleA), &SimpleAImpl{})
-	assert.Panics(t, func() {
-		defer func() {
-			errDuplicate := recover().(error)
-			assert.NotNil(t, errDuplicate)
-			assert.True(t, errors.Is(errDuplicate, di.ErrBeanDuplicate))
-			t.Logf("go error: %s", errDuplicate)
-			// throw again
-			panic(errDuplicate)
-		}()
-
+	assertPanicIsError(t, di.ErrBeanDuplicate, func() {
 		di.Component(new(SimpleA), &SimpleAImpl{})
 	})
 }
@@ -52,10 +45,10 @@ func TestFailOnBeanDuplication(t *testing.T) {
 func TestSimpleAutowire(t *testing.T) {
 	defer di.Reset()
 
-	a := di.Component(new(SimpleA), &SimpleAImpl{})
-	b := di.Component(new(SimpleB), &SimpleBImpl{
-		A: di.Resource(new(SimpleA)),
-	})
+	a := di.Component(&SimpleAImpl{}, new(SimpleA))
+	b := di.Component(&SimpleBImpl{
+		A: di.Autowire(new(SimpleA)),
+	}, new(SimpleB))
 
 	assert.Equal(t, "a;", a.DoA())
 	assert.Equal(t, "b;a;", b.DoB())
@@ -99,17 +92,57 @@ func (c CycleCImpl) Run() string {
 }
 
 func TestCycleAutowire(t *testing.T) {
-	a := di.Component(new(SimpleA), &SimpleAImpl{})
-	b := di.Component(new(CycleB), &CycleBImpl{
-		A: di.Resource(new(SimpleA)),
-		C: di.Resource(new(CycleC)),
-	})
-	c := di.Component(new(CycleC), &CycleCImpl{
-		A: di.Resource(new(SimpleA)),
-		B: di.Resource(new(CycleB)),
-	})
+	a := di.Component(&SimpleAImpl{}, new(SimpleA))
+	b := di.Component(&CycleBImpl{
+		A: di.Autowire(new(SimpleA)),
+		C: di.Autowire(new(CycleC)),
+	}, new(CycleB))
+	c := di.Component(&CycleCImpl{
+		A: di.Autowire(new(SimpleA)),
+		B: di.Autowire(new(CycleB)),
+	}, new(CycleC))
 
 	assert.Equal(t, "a;", a.DoA())
 	assert.Equal(t, "run:b;a;c;", b.Run())
 	assert.Equal(t, "run:c;a;b;", c.Run())
+}
+
+func TestCannotRegisterNilBean(t *testing.T) {
+	di.Reset()
+
+	assertPanicIsError(t, di.ErrBeanNil, func() {
+		var nilBean *SimpleAImpl = nil
+		di.Component(nilBean, new(SimpleA))
+	})
+	assertPanicIsError(t, di.ErrBeanNil, func() {
+		di.Component((*SimpleAImpl)(nil), new(SimpleA))
+	})
+}
+
+func assertPanicIsError(t *testing.T, target error, panicFunc func()) {
+	assert.Panics(t, func() {
+		defer func() {
+			err := recover().(error)
+			assert.ErrorIs(t, err, target)
+			t.Logf("got expected panic: %s", err)
+			panic(err)
+		}()
+		panicFunc()
+	})
+}
+
+func TestFailOnValidate(t *testing.T) {
+	defer di.Reset()
+
+	assert.NotPanics(t, func() {
+		di.Component(&SimpleAImpl{}, new(SimpleA))
+		di.Component(&SimpleBImpl{
+			A: di.Autowire(new(SimpleA)),
+			C: di.Autowire(new(SimpleC)),
+		}, new(SimpleB))
+	})
+
+	assertPanicIsError(t, di.ErrBeanNotFound, func() {
+		di.Validate()
+	})
 }

@@ -114,12 +114,12 @@ func (b BarImpl) Run() string {
 }
 
 func main() {
-	foo := di.Component(new(Foo), &FooImpl{
+	foo := di.Component(&FooImpl{
 		bar: di.Resource(new(Bar)),
-	})
-	bar := di.Component(new(Bar), &BarImpl{
+	}, new(Foo))
+	bar := di.Component(&BarImpl{
 		foo: di.Resource(new(Foo)),
-	})
+	}, new(Bar))
 
 	fmt.Println(foo.Run())
 	fmt.Println(bar.Run())
