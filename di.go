@@ -86,14 +86,10 @@ func Component[T any](bean T, describes ...any) T {
 }
 
 func (ac *AppContext) Component(bean any, describes ...any) any {
-	var beanType any
-	if len(describes) == 0 {
-		beanType = reflect.TypeOf(bean)
-	}
-
 	var (
-		def  any = nil
-		desc []Describe
+		beanType any = reflect.TypeOf(bean)
+		beanDef  any = nil
+		desc     []Describe
 	)
 	if len(describes) > 0 {
 		for _, e := range describes {
@@ -102,16 +98,16 @@ func (ac *AppContext) Component(bean any, describes ...any) any {
 				desc = append(desc, d)
 			} else {
 				// should have only one bean type definition
-				if def != nil {
+				if beanDef != nil {
 					panic(fmt.Errorf("%w: bean[%s] has multipul type %s, %s",
-						ErrBeanTypeAmbiguous, reflect.TypeOf(bean), reflect.TypeOf(def), reflect.TypeOf(e)))
+						ErrBeanTypeAmbiguous, reflect.TypeOf(bean), reflect.TypeOf(beanDef), reflect.TypeOf(e)))
 				}
-				def = e
+				beanDef = e
 			}
 		}
 	}
-	if def != nil {
-		beanType = def
+	if beanDef != nil {
+		beanType = beanDef
 	}
 
 	return ac.TComponent(bean, TypeOf(beanType), desc...)

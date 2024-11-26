@@ -63,3 +63,19 @@ func TestDIQualifier(t *testing.T) {
 	assert.Equal(t, qualified.Second(), "second foo bar")
 	assert.Equal(t, qualified.Another(), "second foo bar")
 }
+
+func TestDefaultDIQualifier(t *testing.T) {
+	defer di.Release()
+
+	_ = di.Component(&FirstFooImpl{}, di.Name("first"))
+	_ = di.Component(&SecondFooImpl{}, di.Name("second", "another"))
+	qualified := di.Component(&QualifiedBarImpl{
+		first:   di.Autowire(new(QualifiedFoo), di.Name("first")),
+		second:  di.Autowire(new(QualifiedFoo), di.Name("second")),
+		another: di.Autowire(new(QualifiedFoo), di.Name("another")),
+	})
+
+	assert.Equal(t, qualified.First(), "first foo bar")
+	assert.Equal(t, qualified.Second(), "second foo bar")
+	assert.Equal(t, qualified.Another(), "second foo bar")
+}
