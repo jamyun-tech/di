@@ -93,6 +93,8 @@ func (c CycleCImpl) Run() string {
 }
 
 func TestCycleAutowire(t *testing.T) {
+	defer di.Release()
+
 	a := di.Component(&SimpleAImpl{}, new(SimpleA))
 	b := di.Component(&CycleBImpl{
 		A: di.Autowire(new(SimpleA)),
@@ -106,6 +108,53 @@ func TestCycleAutowire(t *testing.T) {
 	assert.Equal(t, "a;", a.DoA())
 	assert.Equal(t, "run:b;a;c;", b.Run())
 	assert.Equal(t, "run:c;a;b;", c.Run())
+}
+
+func TestDefaultCycleAutowire(t *testing.T) {
+	defer di.Release()
+
+	a := di.Component(&SimpleAImpl{})
+	b := di.Component(&CycleBImpl{
+		A: di.Autowire(new(SimpleA)),
+		C: di.Autowire(new(CycleC)),
+	})
+	c := di.Component(&CycleCImpl{
+		A: di.Autowire(new(SimpleA)),
+		B: di.Autowire(new(CycleB)),
+	})
+
+	assert.Equal(t, "a;", a.DoA())
+	assert.Equal(t, "run:b;a;c;", b.Run())
+	assert.Equal(t, "run:c;a;b;", c.Run())
+}
+
+type (
+	StructA struct{}
+	StructB struct {
+		A di.Autowired[*StructA]
+	}
+)
+
+func TestStructTypeReference(t *testing.T) {
+	defer di.Release()
+
+	di.Component(&StructA{}, new(*StructA))
+	di.Component(&StructB{
+		A: di.Autowire(new(*StructA)),
+	}, new(*StructB))
+
+	assert.NotPanics(t, di.Validate)
+}
+
+func TestDefaultStructTypeReference(t *testing.T) {
+	defer di.Release()
+
+	di.Component(&StructA{})
+	di.Component(&StructB{
+		A: di.Autowire(new(*StructA)),
+	})
+
+	assert.NotPanics(t, di.Validate)
 }
 
 func TestCannotRegisterNilBean(t *testing.T) {

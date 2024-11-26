@@ -8,11 +8,12 @@ import (
 )
 
 var (
-	ErrBeanNil        = errors.New("bean cannot be nil")
-	ErrBeanDefinition = errors.New("bean definition error")
-	ErrBeanNotFound   = errors.New("bean not found")
-	ErrBeanDuplicate  = errors.New("bean already exists")
-	global            = &AppContext{register: make(map[*Definition]struct{})}
+	ErrBeanNil           = errors.New("bean cannot be nil")
+	ErrBeanTypeAmbiguous = errors.New("bean type ambiguous")
+	ErrBeanDefinition    = errors.New("bean definition error")
+	ErrBeanNotFound      = errors.New("bean not found")
+	ErrBeanDuplicate     = errors.New("bean already exists")
+	global               = &AppContext{register: make(map[*Definition]struct{})}
 )
 
 type (
@@ -73,16 +74,47 @@ func (ac *AppContext) Release() {
 }
 
 func TypeOf(def any) *Definition {
-	return &Definition{BeanType: reflect.TypeOf(def).Elem()}
+	if reflectType, ok := def.(reflect.Type); ok {
+		return &Definition{BeanType: reflectType, Wildcard: true}
+	}
+	return &Definition{BeanType: reflect.TypeOf(def).Elem(), Wildcard: true}
 }
 
-func Component[T any](bean T, beanType any, describes ...Describe) T {
-	global.Component(bean, beanType, describes...)
+func Component[T any](bean T, describes ...any) T {
+	global.Component(bean, describes...)
 	return bean
 }
 
-func (ac *AppContext) Component(bean, beanType any, describes ...Describe) any {
-	return ac.TComponent(bean, TypeOf(beanType), describes...)
+func (ac *AppContext) Component(bean any, describes ...any) any {
+	var beanType any
+	if len(describes) == 0 {
+		beanType = reflect.TypeOf(bean)
+	}
+
+	var (
+		def  any = nil
+		desc []Describe
+	)
+	if len(describes) > 0 {
+		for _, e := range describes {
+			if d, ok := e.(Describe); ok {
+				// collect all bean describe
+				desc = append(desc, d)
+			} else {
+				// should have only one bean type definition
+				if def != nil {
+					panic(fmt.Errorf("%w: bean[%s] has multipul type %s, %s",
+						ErrBeanTypeAmbiguous, reflect.TypeOf(bean), reflect.TypeOf(def), reflect.TypeOf(e)))
+				}
+				def = e
+			}
+		}
+	}
+	if def != nil {
+		beanType = def
+	}
+
+	return ac.TComponent(bean, TypeOf(beanType), desc...)
 }
 
 func (ac *AppContext) TComponent(bean any, beanType any, describes ...Describe) any {
@@ -121,10 +153,19 @@ func AutowireAll[T any](def *T, cfg ...Describe) Autowired[[]T] {
 }
 
 func Autowire[T any](beanType *T, describes ...Describe) Autowired[T] {
-	wired := global.Autowire(beanType, describes...)
-	return sync.OnceValue(func() T {
-		return wired().(T)
-	})
+	var (
+		result T
+		once   sync.Once
+		wired  = global.Autowire(beanType, describes...)
+	)
+	g := func() {
+		result = wired().(T)
+		wired = nil
+	}
+	return func() T {
+		once.Do(g)
+		return result
+	}
 }
 
 func (ac *AppContext) Autowire(beanType any, describes ...Describe) Autowired[any] {
@@ -215,8 +256,8 @@ func Name(name ...string) Describe {
 		}
 	}
 }
-func Wildcard() Describe {
+func DisableWildcard() Describe {
 	return func(config *Definition) {
-		config.Wildcard = true
+		config.Wildcard = false
 	}
 }

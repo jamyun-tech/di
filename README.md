@@ -46,22 +46,21 @@ func (foo DiFoo) Run() {
 acceptable.
 
 We'll have the following [benchmark](https://github.com/jamyun-tech/di/blob/main/di_bench_test.go) running on my laptop, the
-result shows average overhead per ops is 1.5~1.7ns. In real world with real work load, the overhead can be ignored.
+result shows average overhead per ops is 0.5~0.7ns. In real world with real work load, the overhead can be ignored.
 
 ```shell
+go test -benchtime=10s -bench .
+
 goos: darwin
 goarch: arm64
 pkg: github.com/jamyun-tech/di
 cpu: Apple M2 Max
-BenchmarkPlainStruct
-BenchmarkPlainStruct-12    	592450573	         2.033 ns/op
-BenchmarkDIStruct
-BenchmarkDIStruct-12       	340340929	         3.511 ns/op
-BenchmarkPlainFmt
-BenchmarkPlainFmt-12       	 7590954	       162.3 ns/op
-BenchmarkDiFmt
-BenchmarkDiFmt-12          	 7383570	       160.9 ns/op
+BenchmarkPlainStruct-12    	1000000000	         2.169 ns/op
+BenchmarkDIStruct-12       	1000000000	         2.662 ns/op
+BenchmarkPlainFmt-12       	77954832	       152.6 ns/op
+BenchmarkDiFmt-12          	77462708	       153.3 ns/op
 PASS
+ok  	github.com/jamyun-tech/di	29.403s
 ```
 
 # Examples
@@ -77,14 +76,22 @@ import (
 )
 
 type (
-	Foo interface {
-		DoFoo() string
+	Runner interface {
 		Run() string
 	}
 
+	Foo interface {
+		Runner
+		DoFoo() string
+	}
+
 	Bar interface {
+		Runner
 		DoBar() string
-		Run() string
+	}
+
+	Tar interface {
+		Bar
 	}
 
 	FooImpl struct {
@@ -115,11 +122,11 @@ func (b BarImpl) Run() string {
 
 func main() {
 	foo := di.Component(&FooImpl{
-		bar: di.Resource(new(Bar)),
-	}, new(Foo))
+		bar: di.Autowire(new(Bar)),
+	})
 	bar := di.Component(&BarImpl{
-		foo: di.Resource(new(Foo)),
-	}, new(Bar))
+		foo: di.Autowire(new(Foo)),
+	})
 
 	fmt.Println(foo.Run())
 	fmt.Println(bar.Run())
