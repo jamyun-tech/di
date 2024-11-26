@@ -12,23 +12,27 @@ var (
 	ErrBeanDefinition = errors.New("bean definition error")
 	ErrBeanNotFound   = errors.New("bean not found")
 	ErrBeanDuplicate  = errors.New("bean already exists")
-	global            = &AppContext{}
+	global            = &AppContext{register: make(map[*Definition]struct{})}
 )
 
 type (
 	Autowired[T any] func() T
 	Describe         func(d *Definition)
 
+	// Definition defines a bean by it's type by BeanType
+	// and with it's alias by Qualifier, Qualifier is a comma
+	// seperate string.
 	Definition struct {
 		Qualifier []string
 		BeanType  reflect.Type
 		Bean      any
+		Wildcard  bool
 	}
 
 	AppContext struct {
-		register   sync.Map // bean cache: type -> bean
-		definition sync.Map // qualified cache: type -> config
-		validator  []func()
+		register  map[*Definition]struct{} // bean definition set: {definition, ...}
+		validator []func()
+		rw        sync.RWMutex
 	}
 
 	Qualifier interface {
@@ -36,9 +40,8 @@ type (
 	}
 )
 
-func Reset() {
-	global.register.Clear()
-	global.definition.Clear()
+func Release() {
+	global.Release()
 }
 
 func Validate() {
@@ -46,17 +49,31 @@ func Validate() {
 }
 
 func (ac *AppContext) Validate() {
+	ac.rw.Lock()
 	if len(ac.validator) == 0 {
+		ac.rw.Unlock()
 		return
 	}
-	for _, v := range ac.validator {
-		// should fail now if any bean initialize fail
+	snapshot := make([]func(), len(ac.validator))
+	copy(snapshot, ac.validator)
+	ac.rw.Unlock()
+
+	// should fail now if any bean initialize fail
+	for _, v := range snapshot {
 		v()
 	}
 }
 
-func TypeOf(def any) reflect.Type {
-	return reflect.TypeOf(def).Elem()
+func (ac *AppContext) Release() {
+	ac.rw.Lock()
+	defer ac.rw.Unlock()
+
+	ac.register = make(map[*Definition]struct{})
+	ac.validator = nil
+}
+
+func TypeOf(def any) *Definition {
+	return &Definition{BeanType: reflect.TypeOf(def).Elem()}
 }
 
 func Component[T any](bean T, beanType any, describes ...Describe) T {
@@ -69,28 +86,32 @@ func (ac *AppContext) Component(bean, beanType any, describes ...Describe) any {
 }
 
 func (ac *AppContext) TComponent(bean any, beanType any, describes ...Describe) any {
+	ac.rw.Lock()
+	defer ac.rw.Unlock()
+
 	if bean == nil || reflect.ValueOf(bean).IsNil() {
 		panic(fmt.Errorf("%w: [%s] cannot be nil", ErrBeanNil, reflect.TypeOf(bean).Elem()))
 	}
 
-	var definition = Definition{Bean: bean}
-	if realType, ok := beanType.(reflect.Type); ok {
-		definition.BeanType = realType
+	definition := &Definition{Bean: bean}
+	if def, ok := beanType.(*Definition); ok {
+		definition.BeanType = def.BeanType
 	} else if describe, ok := beanType.(Describe); ok {
 		describes = append([]Describe{describe}, describes...)
 	}
-	for _, describe := range describes {
-		describe(&definition)
-	}
+
+	definition.Apply(describes)
+
 	if definition.BeanType == nil {
 		panic(fmt.Errorf("%w: [%s] type unknown", ErrBeanDefinition, reflect.TypeOf(beanType).Elem()))
 	}
 
-	if _, exist := ac.register.LoadOrStore(definition.BeanType, bean); exist {
-		panic(fmt.Errorf("%w, [%s] duplicate defifnition", ErrBeanDuplicate, beanType))
+	if _, exist := ac.find(definition); exist {
+		panic(fmt.Errorf("%w, [%s] duplicate defifnition", ErrBeanDuplicate, definition.BeanType))
 	} else {
-		ac.definition.Store(definition.BeanType, definition)
+		ac.register[definition] = struct{}{}
 	}
+
 	return bean
 }
 
@@ -100,20 +121,25 @@ func AutowireAll[T any](def *T, cfg ...Describe) Autowired[[]T] {
 }
 
 func Autowire[T any](beanType *T, describes ...Describe) Autowired[T] {
-	wired := global.Resource(beanType, describes...)
+	wired := global.Autowire(beanType, describes...)
 	return sync.OnceValue(func() T {
 		return wired().(T)
 	})
 }
 
-func (ac *AppContext) Resource(beanType any, describes ...Describe) Autowired[any] {
-	wired := ac.TResource(TypeOf(beanType), describes...)
+func (ac *AppContext) Autowire(beanType any, describes ...Describe) Autowired[any] {
+	wired := ac.TAutowire(TypeOf(beanType), describes...)
 	ac.validator = append(ac.validator, lazyValidate(wired))
 	return wired
 }
 
-func (ac *AppContext) TResource(def reflect.Type, describes ...Describe) Autowired[any] {
-	bean, ok := ac.register.Load(def)
+func (ac *AppContext) TAutowire(def *Definition, describes ...Describe) Autowired[any] {
+	ac.rw.RLock()
+	defer ac.rw.RUnlock()
+
+	def.Apply(describes)
+
+	bean, ok := ac.find(def)
 	if ok {
 		return func() any {
 			return bean
@@ -122,14 +148,56 @@ func (ac *AppContext) TResource(def reflect.Type, describes ...Describe) Autowir
 	return ac.lazyLoad(def)
 }
 
-func (ac *AppContext) lazyLoad(def reflect.Type) func() any {
+func (ac *AppContext) lazyLoad(def *Definition) func() any {
 	return sync.OnceValue(func() any {
-		bean, ok := ac.register.Load(def)
+		ac.rw.RLock()
+		defer ac.rw.RUnlock()
+
+		bean, ok := ac.find(def)
 		if ok {
 			return bean
 		}
-		panic(fmt.Errorf("%w, type: %s", ErrBeanNotFound, def))
+		panic(fmt.Errorf("%w, type: %s", ErrBeanNotFound, def.BeanType))
 	})
+}
+
+func (ac *AppContext) find(d *Definition) (bean any, exist bool) {
+	for def := range ac.register {
+		if def.Match(d) {
+			return def.Bean, true
+		}
+	}
+	return nil, false
+}
+
+func (d *Definition) Apply(describes []Describe) {
+	if len(describes) == 0 {
+		return
+	}
+
+	for _, describe := range describes {
+		describe(d)
+	}
+}
+
+func (d *Definition) Match(o *Definition) bool {
+	if d.BeanType == o.BeanType || (o.Wildcard && d.BeanType.AssignableTo(o.BeanType)) {
+		if len(d.Qualifier) == 0 || len(d.Qualifier) == 1 && d.Qualifier[0] == "default" {
+			return true
+		}
+		if len(o.Qualifier) > 0 && len(d.Qualifier) > 0 {
+			for _, name := range d.Qualifier {
+				for _, out := range o.Qualifier {
+					if name == out {
+						return true
+					}
+				}
+			}
+			return false
+		}
+		return true
+	}
+	return false
 }
 
 func lazyValidate(beanWire Autowired[any]) func() {
@@ -145,5 +213,10 @@ func Name(name ...string) Describe {
 		} else {
 			config.Qualifier = name
 		}
+	}
+}
+func Wildcard() Describe {
+	return func(config *Definition) {
+		config.Wildcard = true
 	}
 }

@@ -2,9 +2,10 @@ package di_test
 
 import (
 	"fmt"
-	"github.com/jamyun-tech/di"
 	"testing"
 	"time"
+
+	"github.com/jamyun-tech/di"
 )
 
 type (
@@ -48,7 +49,7 @@ func (d DIBImpl) Run() struct{} {
 }
 
 func BenchmarkPlainStruct(b *testing.B) {
-	defer di.Reset()
+	defer di.Release()
 
 	pa := &PlainAImpl{}
 	pb := &PlainBImpl{pa}
@@ -58,7 +59,7 @@ func BenchmarkPlainStruct(b *testing.B) {
 }
 
 func BenchmarkDIStruct(b *testing.B) {
-	defer di.Reset()
+	defer di.Release()
 
 	di.Component(&DIAImpl{}, new(DIA))
 	db := di.Component(&DIBImpl{
@@ -119,7 +120,7 @@ func BenchmarkPlainFmt(b *testing.B) {
 }
 
 func BenchmarkDiFmt(b *testing.B) {
-	defer di.Reset()
+	defer di.Release()
 
 	di.Component(&DiFmtAImpl{}, new(DiFmtA))
 	db := di.Component(&DiFmtBImpl{

@@ -1,9 +1,10 @@
 package di_test
 
 import (
+	"testing"
+
 	"github.com/jamyun-tech/di"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 type (
@@ -21,9 +22,9 @@ type (
 	}
 
 	QualifiedBarImpl struct {
-		FirstFoo   di.Autowired[QualifiedFoo]
-		SecondFoo  di.Autowired[QualifiedFoo]
-		AnotherFoo di.Autowired[QualifiedFoo]
+		first   di.Autowired[QualifiedFoo]
+		second  di.Autowired[QualifiedFoo]
+		another di.Autowired[QualifiedFoo]
 	}
 )
 
@@ -36,26 +37,26 @@ func (foo SecondFooImpl) Foo() string {
 }
 
 func (q QualifiedBarImpl) First() string {
-	return q.FirstFoo().Foo() + " bar"
+	return q.first().Foo() + " bar"
 }
 
 func (q QualifiedBarImpl) Second() string {
-	return q.SecondFoo().Foo() + " bar"
+	return q.second().Foo() + " bar"
 }
 
 func (q QualifiedBarImpl) Another() string {
-	return q.AnotherFoo().Foo() + " bar"
+	return q.another().Foo() + " bar"
 }
 
 func TestDIQualifier(t *testing.T) {
-	defer di.Reset()
+	defer di.Release()
 
 	_ = di.Component(&FirstFooImpl{}, new(QualifiedFoo), di.Name("first"))
 	_ = di.Component(&SecondFooImpl{}, new(QualifiedFoo), di.Name("second", "another"))
 	qualified := di.Component(&QualifiedBarImpl{
-		FirstFoo:   di.Autowire(new(QualifiedFoo), di.Name("first")),
-		SecondFoo:  di.Autowire(new(QualifiedFoo), di.Name("second")),
-		AnotherFoo: di.Autowire(new(QualifiedFoo), di.Name("another")),
+		first:   di.Autowire(new(QualifiedFoo), di.Name("first")),
+		second:  di.Autowire(new(QualifiedFoo), di.Name("second")),
+		another: di.Autowire(new(QualifiedFoo), di.Name("another")),
 	}, new(QualifiedBar))
 
 	assert.Equal(t, qualified.First(), "first foo bar")

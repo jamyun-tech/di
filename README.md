@@ -42,7 +42,7 @@ func (foo DiFoo) Run() {
 
 # Performance Overhead
 
-`di` wrap value with `sync.OnceValue` and assemble bean using `sync.Map` as a bean registry, the performance overhead is
+`di` wrap value with `sync.OnceValue` and assemble bean using a map as a bean registry, the performance overhead is
 acceptable.
 
 We'll have the following [benchmark](https://github.com/jamyun-tech/di/blob/main/di_bench_test.go) running on my laptop, the

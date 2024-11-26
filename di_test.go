@@ -1,9 +1,10 @@
 package di_test
 
 import (
+	"testing"
+
 	"github.com/jamyun-tech/di"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 type (
@@ -34,7 +35,7 @@ func (b SimpleBImpl) DoB() string {
 }
 
 func TestFailOnBeanDuplication(t *testing.T) {
-	defer di.Reset()
+	defer di.Release()
 
 	_ = di.Component(new(SimpleA), &SimpleAImpl{})
 	assertPanicIsError(t, di.ErrBeanDuplicate, func() {
@@ -43,7 +44,7 @@ func TestFailOnBeanDuplication(t *testing.T) {
 }
 
 func TestSimpleAutowire(t *testing.T) {
-	defer di.Reset()
+	defer di.Release()
 
 	a := di.Component(&SimpleAImpl{}, new(SimpleA))
 	b := di.Component(&SimpleBImpl{
@@ -108,7 +109,7 @@ func TestCycleAutowire(t *testing.T) {
 }
 
 func TestCannotRegisterNilBean(t *testing.T) {
-	di.Reset()
+	di.Release()
 
 	assertPanicIsError(t, di.ErrBeanNil, func() {
 		var nilBean *SimpleAImpl = nil
@@ -132,7 +133,7 @@ func assertPanicIsError(t *testing.T, target error, panicFunc func()) {
 }
 
 func TestFailOnValidate(t *testing.T) {
-	defer di.Reset()
+	defer di.Release()
 
 	assert.NotPanics(t, func() {
 		di.Component(&SimpleAImpl{}, new(SimpleA))
