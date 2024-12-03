@@ -51,6 +51,7 @@ func TestSimpleAutowire(t *testing.T) {
 		A: di.Autowire(new(SimpleA)),
 	}, new(SimpleB))
 
+	assert.Equal(t, "a;", di.Autowire(new(SimpleA)).Get().DoA())
 	assert.Equal(t, "a;", a.DoA())
 	assert.Equal(t, "b;a;", b.DoB())
 }

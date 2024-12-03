@@ -30,6 +30,9 @@ type (
 	DIBImpl struct {
 		A di.Autowired[DIA]
 	}
+	DIBEagerImpl struct {
+		A DIA
+	}
 )
 
 func (p PlainAImpl) Run() struct{} {
@@ -48,6 +51,10 @@ func (d DIBImpl) Run() struct{} {
 	return d.A().Run()
 }
 
+func (d DIBEagerImpl) Run() struct{} {
+	return d.A.Run()
+}
+
 func BenchmarkPlainStruct(b *testing.B) {
 	defer di.Release()
 
@@ -64,6 +71,18 @@ func BenchmarkDIStruct(b *testing.B) {
 	di.Component(&DIAImpl{}, new(DIA))
 	db := di.Component(&DIBImpl{
 		A: di.Autowire(new(DIA)),
+	}, new(DIB))
+	for i := 0; i < b.N; i++ {
+		db.Run()
+	}
+}
+
+func BenchmarkDIEagerStruct(b *testing.B) {
+	defer di.Release()
+
+	di.Component(&DIAImpl{}, new(DIA))
+	db := di.Component(&DIBEagerImpl{
+		A: di.Autowire(new(DIA)).Get(),
 	}, new(DIB))
 	for i := 0; i < b.N; i++ {
 		db.Run()
@@ -92,6 +111,9 @@ type (
 	DiFmtBImpl struct {
 		A di.Autowired[DiFmtA]
 	}
+	DiFmtBEagerImpl struct {
+		A DiFmtA
+	}
 )
 
 func (d FmtAImpl) Run() string {
@@ -110,6 +132,10 @@ func (d DiFmtBImpl) Run() string {
 	return fmt.Sprintf("from b: %s", d.A().Run())
 }
 
+func (d DiFmtBEagerImpl) Run() string {
+	return fmt.Sprintf("from b: %s", d.A.Run())
+}
+
 func BenchmarkPlainFmt(b *testing.B) {
 	fa := &FmtAImpl{}
 	fb := &FmtBImpl{fa}
@@ -125,6 +151,18 @@ func BenchmarkDiFmt(b *testing.B) {
 	di.Component(&DiFmtAImpl{}, new(DiFmtA))
 	db := di.Component(&DiFmtBImpl{
 		A: di.Autowire(new(DiFmtA)),
+	}, new(DiFmtB))
+	for i := 0; i < b.N; i++ {
+		db.Run()
+	}
+}
+
+func BenchmarkDiEagerFmt(b *testing.B) {
+	defer di.Release()
+
+	di.Component(&DiFmtAImpl{}, new(DiFmtA))
+	db := di.Component(&DiFmtBEagerImpl{
+		A: di.Autowire(new(DiFmtA)).Get(),
 	}, new(DiFmtB))
 	for i := 0; i < b.N; i++ {
 		db.Run()

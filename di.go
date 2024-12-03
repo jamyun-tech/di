@@ -17,8 +17,9 @@ var (
 )
 
 type (
-	Autowired[T any] func() T
-	Describe         func(d *Definition)
+	Autowired[T any]    func() T
+	AutowiredAll[T any] func() []T
+	Describe            func(d *Definition)
 
 	// Definition defines a bean by it's type by BeanType
 	// and with it's alias by Qualifier, Qualifier is a comma
@@ -40,6 +41,10 @@ type (
 		Qualified() []string
 	}
 )
+
+func (a Autowired[T]) Get() T {
+	return a()
+}
 
 func Release() {
 	global.Release()
@@ -124,9 +129,11 @@ func (ac *AppContext) TComponent(bean any, beanType any, describes ...Describe) 
 	definition := &Definition{Bean: bean}
 	if def, ok := beanType.(*Definition); ok {
 		definition.BeanType = def.BeanType
-	} else if describe, ok := beanType.(Describe); ok {
-		describes = append([]Describe{describe}, describes...)
 	}
+	// todo: unused code
+	// else if describe, ok := beanType.(Describe); ok {
+	// 	describes = append([]Describe{describe}, describes...)
+	// }
 
 	definition.Apply(describes)
 
@@ -134,7 +141,7 @@ func (ac *AppContext) TComponent(bean any, beanType any, describes ...Describe) 
 		panic(fmt.Errorf("%w: [%s] type unknown", ErrBeanDefinition, reflect.TypeOf(beanType).Elem()))
 	}
 
-	if _, exist := ac.find(definition); exist {
+	if _, exist := ac.loadOne(definition); exist {
 		panic(fmt.Errorf("%w, [%s] duplicate defifnition", ErrBeanDuplicate, definition.BeanType))
 	} else {
 		ac.register[definition] = struct{}{}
@@ -143,9 +150,68 @@ func (ac *AppContext) TComponent(bean any, beanType any, describes ...Describe) 
 	return bean
 }
 
-func AutowireAll[T any](def *T, cfg ...Describe) Autowired[[]T] {
-	// TODO
-	return nil
+func AutowireAll[T any](beanType *T, describes ...Describe) AutowiredAll[T] {
+	var (
+		result []T
+		once   sync.Once
+		wired  = global.AutowireAll(beanType, describes...)
+	)
+	g := func() {
+		beans := wired()
+		if len(beans) == 0 {
+			result = nil
+			return
+		}
+		result = make([]T, len(beans))
+		for i := 0; i < len(beans); i++ {
+			result[i] = beans[i].(T)
+		}
+		wired = nil
+	}
+	return func() []T {
+		once.Do(g)
+		return result
+	}
+}
+
+func (ac *AppContext) AutowireAll(beanType any, describes ...Describe) AutowiredAll[any] {
+	var (
+		result []any
+		once   sync.Once
+		wired  = ac.FindAll(TypeOf(beanType), describes...)
+	)
+	g := func() {
+		result = wired()
+		wired = nil
+	}
+	return func() []any {
+		once.Do(g)
+		return result
+	}
+}
+
+func (ac *AppContext) FindAll(def *Definition, describes ...Describe) AutowiredAll[any] {
+	def.Apply(describes)
+	return func() []any {
+		ac.rw.RLock()
+		defer ac.rw.RUnlock()
+
+		bean, ok := ac.loadAll(def)
+		if ok {
+			return bean
+		}
+		panic(fmt.Errorf("%w, type: %s", ErrBeanNotFound, def.BeanType))
+	}
+}
+
+func (ac *AppContext) loadAll(d *Definition) (beans []any, exist bool) {
+	for def := range ac.register {
+		if def.Match(d) {
+			beans = append(beans, def.Bean)
+			exist = true
+		}
+	}
+	return
 }
 
 func Autowire[T any](beanType *T, describes ...Describe) Autowired[T] {
@@ -165,40 +231,48 @@ func Autowire[T any](beanType *T, describes ...Describe) Autowired[T] {
 }
 
 func (ac *AppContext) Autowire(beanType any, describes ...Describe) Autowired[any] {
-	wired := ac.TAutowire(TypeOf(beanType), describes...)
-	ac.validator = append(ac.validator, lazyValidate(wired))
-	return wired
+	var (
+		result any
+		once   sync.Once
+		wired  = ac.Find(TypeOf(beanType), describes...)
+	)
+	g := func() {
+		result = wired()
+		ac.validator = append(ac.validator, lazyValidate(wired))
+		wired = nil
+	}
+	return func() any {
+		once.Do(g)
+		return result
+	}
 }
 
-func (ac *AppContext) TAutowire(def *Definition, describes ...Describe) Autowired[any] {
+func (ac *AppContext) Find(def *Definition, describes ...Describe) Autowired[any] {
 	ac.rw.RLock()
 	defer ac.rw.RUnlock()
 
 	def.Apply(describes)
 
-	bean, ok := ac.find(def)
+	bean, ok := ac.loadOne(def)
 	if ok {
 		return func() any {
 			return bean
 		}
 	}
-	return ac.lazyLoad(def)
-}
-
-func (ac *AppContext) lazyLoad(def *Definition) func() any {
-	return sync.OnceValue(func() any {
+	// lazy load
+	return func() any {
 		ac.rw.RLock()
 		defer ac.rw.RUnlock()
 
-		bean, ok := ac.find(def)
+		bean, ok := ac.loadOne(def)
 		if ok {
 			return bean
 		}
 		panic(fmt.Errorf("%w, type: %s", ErrBeanNotFound, def.BeanType))
-	})
+	}
 }
 
-func (ac *AppContext) find(d *Definition) (bean any, exist bool) {
+func (ac *AppContext) loadOne(d *Definition) (bean any, exist bool) {
 	for def := range ac.register {
 		if def.Match(d) {
 			return def.Bean, true
@@ -238,6 +312,12 @@ func (d *Definition) Match(o *Definition) bool {
 }
 
 func lazyValidate(beanWire Autowired[any]) func() {
+	return func() {
+		beanWire()
+	}
+}
+
+func lazyValidateAll(beanWire AutowiredAll[any]) func() {
 	return func() {
 		beanWire()
 	}
